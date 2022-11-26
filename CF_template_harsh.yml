@@ -1,0 +1,156 @@
+Description: Send email notifications when files are uploaded to an s3 bucket
+
+Parameters:
+
+ BucketName:
+    Type: String
+    Default: cc-defaultharsh01
+
+ NotificationLambdaFnName:
+    Type: String
+    Default: harsh-lambdafunction-2075727
+
+ SenderEmail:
+    Type: String
+    Default: akharshika.20@gmail.com
+
+ RecipientEmail:
+    Type: String
+    Default: akharshika@gmail.com
+
+ AWSREGION:
+    Type: String
+    Default: us-east-2
+
+Resources:
+  TesteventS3Bucket:
+    Type: 'AWS::S3::Bucket'
+    Properties:
+      BucketName: !Ref BucketName
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: 's3:ObjectCreated:*'
+            Function: !GetAtt 'LambdaFunctionHarsh.Arn'
+    DependsOn:
+      - LambdaPermissionHarsh
+
+  LambdaFunctionHarsh:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: Function that sends email notifications for s3 bucket file uploads
+      FunctionName: !Ref NotificationLambdaFnName
+      Environment:
+        Variables:
+          sender: !Ref SenderEmail
+          recipient: !Ref RecipientEmail
+          awsregion: !Ref AWSREGION
+      Handler: index.handler
+      Runtime: python3.8
+      Role: !GetAtt 'LambdaRoleHarsh.Arn'
+      Timeout: 240
+      Code:
+          ZipFile: |
+        
+            import os
+            import boto3
+            from botocore.exceptions import ClientError
+
+            def handler(event, context):
+                
+                SENDER = 'akharshika.20@gmail.com' 
+                RECIPIENT = 'akharshika@gmail.com' 
+                AWS_REGION = "us-east-2"
+                
+                OBJECT = event["Records"][0]["s3"]["object"]["key"]
+                BUCKET = event["Records"][0]["s3"]["bucket"]["name"]
+                SUBJECT = "new file added to the bucket"
+                
+                BODY_TEXT = ("Amazon SES Test (Python)\r\n"
+                            "Amazon SES is used to send email"
+                            )
+                            
+                BODY_HTML = f"""<html>
+                <head></head>
+                <body>
+                  <p>A file {OBJECT} was uploaded to Bucket: {BUCKET}<p>
+                  <p>This email was sent with
+                    <a href='https://aws.amazon.com/ses/'>Amazon SES</a> 
+                </body>
+                </html>
+                            """            
+                
+                CHARSET = "UTF-8"
+                
+                client = boto3.client('ses',region_name=AWS_REGION)
+                
+                try:
+                    #Provide the contents of the email.
+                    response = client.send_email(
+                        Destination={
+                            'ToAddresses': [
+                                RECIPIENT,
+                            ],
+                        },
+                        Message={
+                            'Body': {
+                                'Html': {
+                                    'Charset': CHARSET,
+                                    'Data': BODY_HTML,
+                                },
+                                'Text': {
+                                    'Charset': CHARSET,
+                                    'Data': BODY_TEXT,
+                                },
+                            },
+                            'Subject': {
+                                'Charset': CHARSET,
+                                'Data': SUBJECT,
+                            },
+                        },
+                        Source=SENDER
+                    )
+                except ClientError as e:
+                    print(e.response['Error']['Message'])
+                else:
+                    print("Email sent! Message ID:"),
+                    print(response['MessageId'])
+
+  LambdaRoleHarsh:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonS3ObjectLambdaExecutionRolePolicy
+      Path: /
+      Policies:
+        - PolicyName: PolicySendEmailWithSES
+          PolicyDocument:
+            Statement:
+              - Sid: SendEmailswithSES
+                Effect: Allow
+                Action:
+                  - ses:SendEmail
+                  - s3:PutBucketNotification
+                Resource: "*"
+
+  LambdaPermissionHarsh:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:invokeFunction
+      SourceAccount: !Ref AWS::AccountId
+      FunctionName: !Ref NotificationLambdaFnName
+      SourceArn: arn:aws:s3:::cc-defaultharsh01
+      Principal: s3.amazonaws.com
+    
+    DependsOn:
+      - LambdaFunctionHarsh
+
+Outputs:
+  BucketName:
+    Value: !Ref TesteventS3Bucket
+    Description: Name of the sample Amazon S3 bucket with a notification configuration.
